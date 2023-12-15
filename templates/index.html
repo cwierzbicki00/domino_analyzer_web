@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Domino Analyzer</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script>
+        let model;
+        const labelMap = {
+            0:{name:'pip-1', displayValue: 1},
+            1:{name:'pip-2', displayValue: 2},
+            2:{name:'pip-3', displayValue: 3},
+            3:{name:'pip-4', displayValue: 4},
+            4:{name:'pip-5', displayValue: 5},
+            5:{name:'pip-6', displayValue: 6},
+            6:{name:'pip-7', displayValue: 7},
+            7:{name:'pip-8', displayValue: 8},
+            8:{name:'pip-9', displayValue: 9},
+            9:{name:'pip-10', displayValue: 10},
+            10:{name:'pip-11', displayValue: 11},
+            11:{name:'pip-12', displayValue: 12},
+        };
+        const threshold = 0.5;
+    
+        // Load the model
+        async function loadModel() {
+            console.log("Loading model...");
+            model = await tf.loadGraphModel('yolov7_custom/model.json');
+            console.log("Model loaded");
+        }
+    
+        // Request access to the camera
+        async function setupCamera() {
+            console.log("Setting up camera...");
+            const video = document.getElementById('video');
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'environment' } // Use generic constraints
+                });
+                video.srcObject = stream;
+            } catch (e) {
+                console.error("Error accessing the camera: ", e);
+                alert("Error accessing the camera: " + e.message);
+                return;
+            }
+
+            return new Promise((resolve) => {
+                video.onloadedmetadata = () => {
+                    console.log("Camera setup complete");
+                    resolve(video);
+                };
+            });
+        }
+    
+        // Process the image and make a prediction
+        async function predict(image) {
+    console.log("Processing image and making prediction...");
+    const processedImage = tf.browser.fromPixels(image).resizeNearestNeighbor([320, 320]).toFloat().div(tf.scalar(255)).expandDims();
+
+    console.log("Model executing...");
+    const output = await model.predict(processedImage).data();
+    const numDetections = 6300; // Assuming 6300 detections
+    const numAttributes = 17; // Assuming 17 attributes per detection
+
+    const objects = [];
+    for (let i = 0; i < numDetections; ++i) {
+        const offset = i * numAttributes;
+        const score = output[offset + 4]; // Assuming the 5th element is the objectness score
+
+        if (score > threshold) {
+            const bbox = [
+                output[offset],     // x center
+                output[offset + 1], // y center
+                output[offset + 2], // width
+                output[offset + 3], // height
+            ];
+
+            // Convert bbox from relative to absolute coordinates
+            const [xmin, ymin, xmax, ymax] = convertBbox(image.width, image.height, bbox);
+
+            // Find the class with the highest score
+            let maxScore = -Infinity;
+            let classIndex = -1;
+            for (let j = 5; j < numAttributes; ++j) {
+                if (output[offset + j] > maxScore) {
+                    maxScore = output[offset + j];
+                    classIndex = j - 5;
+                }
+            }
+
+            if (classIndex >= 0 && labelMap.hasOwnProperty(classIndex)) {
+                objects.push({
+                    xmin, ymin, xmax, ymax, class: classIndex, score: maxScore
+                });
+            }
+        }
+    }
+
+     // Filter out duplicates
+     const filteredObjects = objects.reduce((acc, obj) => {
+        const isDuplicate = acc.some(accObj => {
+            const iou = calculateIoU(obj, accObj);
+            return iou > 0.5; // Threshold for considering as duplicate
+        });
+        if (!isDuplicate) {
+            acc.push(obj);
+        }
+        return acc;
+    }, []);
+
+    const pipValues = filteredObjects.map(obj => labelMap[obj.class]['displayValue']);
+    console.log("Pip values:", pipValues);
+
+    // Sum the pip values
+    const totalPips = pipValues.reduce((acc, value) => acc + value, 0);
+    console.log("Total pips:", totalPips);
+
+    return totalPips;
+}
+
+function convertBbox(imgWidth, imgHeight, bbox) {
+    const [xCenter, yCenter, width, height] = bbox;
+    const xmin = (xCenter - width / 2) * imgWidth;
+    const xmax = (xCenter + width / 2) * imgWidth;
+    const ymin = (yCenter - height / 2) * imgHeight;
+    const ymax = (yCenter + height / 2) * imgHeight;
+    return [xmin, ymin, xmax, ymax];
+}
+
+function calculateIoU(boxA, boxB) {
+    const xA = Math.max(boxA.xmin, boxB.xmin);
+    const yA = Math.max(boxA.ymin, boxB.ymin);
+    const xB = Math.min(boxA.xmax, boxB.xmax);
+    const yB = Math.min(boxA.ymax, boxB.ymax);
+
+    const interArea = Math.max(0, xB - xA) * Math.max(0, yB - yA);
+
+    const boxAArea = (boxA.xmax - boxA.xmin) * (boxA.ymax - boxA.ymin);
+    const boxBArea = (boxB.xmax - boxB.xmin) * (boxB.ymax - boxB.ymin);
+
+    const iou = interArea / (boxAArea + boxBArea - interArea);
+    return iou;
+}
+
+    
+        async function init() {
+            console.log("Initializing...");
+            try {
+                const video = await setupCamera();
+                video.play();
+                loadModel();
+    
+                const captureButton = document.getElementById('capture');
+                const canvas = document.createElement('canvas');
+                canvas.width = 640;
+                canvas.height = 480;
+    
+                captureButton.addEventListener('click', () => {
+    console.log("Capture button clicked, predicting...");
+    canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+    predict(canvas).then(totalPips => {
+        console.log("Total pips: " + totalPips);
+        document.getElementById('result').innerText = 'Total pips: ' + totalPips;
+    });
+
+});
+            } catch (e) {
+                console.error(e);
+                alert("Camera access denied or not available");
+            }
+        }
+    
+        window.onload = init;
+    </script>
+    
+</head>
+<body>
+    <h2>Capture Domino Image</h2>
+    <video id="video" autoplay playsinline muted></video>
+    <button id="capture">Capture</button>
+        <div id="result"></div>
+    </body>
+    </html>
