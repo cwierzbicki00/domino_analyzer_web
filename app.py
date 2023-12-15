@@ -11,4 +11,5 @@ def model_files(filename):
     return send_from_directory('yolov7_custom', filename)
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', debug=True)
+    if 'liveconsole' not in gethostname():
+        app.run(host='0.0.0.0', debug=True)
