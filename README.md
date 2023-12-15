@@ -8,4 +8,4 @@ To run the application, use the command `python app.py`.
 
 ## Authors
 
-- [Your Name] - Initial work
+- Christian Wierzbicki, Ryan Smith - Initial work
