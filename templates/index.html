@@ -1,14 +1,18 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <!-- Domino Analyzer - A web application for analyzing dominoes using TensorFlow.js -->
+    <!-- Authors: Christian Wierzbicki and Ryan Smith, Group 9, for KSU Data Mining Fall 2023 -->
     <title>Domino Analyzer</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script>
+        // Initialize model, pipCount, and totalPips
         let model;
         let pipCount = 0;
         let totalPips = 0;
+        // Define labelMap for mapping class indices to display values
         const labelMap = {
             0:{name:'pip-1', displayValue: 1},
             1:{name:'pip-2', displayValue: 2},
@@ -23,16 +27,17 @@
             10:{name:'pip-11', displayValue: 11},
             11:{name:'pip-12', displayValue: 12},
         };
-        const threshold = 0.5;
+        // Define threshold for object detection
+        const threshold = 0.8;
     
-        // Load the model
+        // Function to load the model
         async function loadModel() {
             console.log("Loading model...");
             model = await tf.loadGraphModel('yolov7_custom/model.json');
             console.log("Model loaded");
         }
     
-        // Request access to the camera
+        // Function to request access to the camera
         async function setupCamera() {
             console.log("Setting up camera...");
             const video = document.getElementById('video');
@@ -47,6 +52,7 @@
                 return;
             }
 
+            // Return a promise that resolves when the video metadata is loaded
             return new Promise((resolve) => {
                 video.onloadedmetadata = () => {
                     console.log("Camera setup complete");
@@ -55,22 +61,30 @@
             });
         }
     
-        // Process the image and make a prediction
+        // Function to process the image and make a prediction
         async function predict(image) {
     console.log("Processing image and making prediction...");
+    // Preprocess the image
     const processedImage = tf.browser.fromPixels(image).resizeNearestNeighbor([320, 320]).toFloat().div(tf.scalar(255)).expandDims();
 
     console.log("Model executing...");
+    // Execute the model and get the output
     const output = await model.predict(processedImage).data();
+    // Define the number of detections and attributes per detection
     const numDetections = 6300; // Assuming 6300 detections
     const numAttributes = 17; // Assuming 17 attributes per detection
 
+    // Initialize an array to store the detected objects
     const objects = [];
+    // Loop over each detection
     for (let i = 0; i < numDetections; ++i) {
         const offset = i * numAttributes;
+        // Get the objectness score
         const score = output[offset + 4]; // Assuming the 5th element is the objectness score
 
+        // If the score is above the threshold, process the detection
         if (score > threshold) {
+            // Get the bounding box
             const bbox = [
                 output[offset],     // x center
                 output[offset + 1], // y center
@@ -91,6 +105,7 @@
                 }
             }
 
+            // If the class index is valid and exists in the label map, add the object to the array
             if (classIndex >= 0 && labelMap.hasOwnProperty(classIndex)) {
                 objects.push({
                     xmin, ymin, xmax, ymax, class: classIndex, score: maxScore
@@ -101,16 +116,19 @@
 
      // Filter out duplicates
      const filteredObjects = objects.reduce((acc, obj) => {
+        // Check if the object is a duplicate
         const isDuplicate = acc.some(accObj => {
             const iou = calculateIoU(obj, accObj);
             return iou > 0.5; // Threshold for considering as duplicate
         });
+        // If the object is not a duplicate, add it to the accumulator
         if (!isDuplicate) {
             acc.push(obj);
         }
         return acc;
     }, []);
 
+    // Map the filtered objects to their display values
     const pipValues = filteredObjects.map(obj => labelMap[obj.class]['displayValue']);
     console.log("Pip values:", pipValues);
 
@@ -132,6 +150,7 @@
     return currentTotalPips;
 }
 
+// Function to convert bounding box from relative to absolute coordinates
 function convertBbox(imgWidth, imgHeight, bbox) {
     const [xCenter, yCenter, width, height] = bbox;
     const xmin = (xCenter - width / 2) * imgWidth;
@@ -141,22 +160,27 @@ function convertBbox(imgWidth, imgHeight, bbox) {
     return [xmin, ymin, xmax, ymax];
 }
 
+// Function to calculate Intersection over Union (IoU) for two bounding boxes
 function calculateIoU(boxA, boxB) {
     const xA = Math.max(boxA.xmin, boxB.xmin);
     const yA = Math.max(boxA.ymin, boxB.ymin);
     const xB = Math.min(boxA.xmax, boxB.xmax);
     const yB = Math.min(boxA.ymax, boxB.ymax);
 
+    // Calculate the area of intersection
     const interArea = Math.max(0, xB - xA) * Math.max(0, yB - yA);
 
+    // Calculate the area of each box
     const boxAArea = (boxA.xmax - boxA.xmin) * (boxA.ymax - boxA.ymin);
     const boxBArea = (boxB.xmax - boxB.xmin) * (boxB.ymax - boxB.ymin);
 
+    // Calculate the Intersection over Union (IoU)
     const iou = interArea / (boxAArea + boxBArea - interArea);
     return iou;
 }
 
     
+        // Function to initialize the application
         async function init() {
             console.log("Initializing...");
             try {
@@ -164,6 +188,7 @@ function calculateIoU(boxA, boxB) {
                 video.play();
                 loadModel();
     
+                // Create a canvas and add a click event listener to the capture button
                 const captureButton = document.getElementById('capture');
                 const canvas = document.createElement('canvas');
                 canvas.width = 640;
@@ -171,6 +196,7 @@ function calculateIoU(boxA, boxB) {
     
                 captureButton.addEventListener('click', () => {
     console.log("Capture button clicked, predicting...");
+    // Draw the video frame to the canvas and make a prediction
     canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
     predict(canvas);
 });
@@ -180,6 +206,7 @@ function calculateIoU(boxA, boxB) {
             }
         }
     
+        // Initialize the application when the window loads
         window.onload = init;
     </script>
     
